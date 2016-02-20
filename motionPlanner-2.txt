@@ -1,0 +1,787 @@
+#pragma config(Motor,  motorB,          RMOTOR,        tmotorNXT, PIDControl, encoder)
+#pragma config(Motor,  motorC,          LMOTOR,        tmotorNXT, PIDControl, encoder)
+#pragma config(Sensor, S3,     LED,            sensorLightActive)
+
+/* As same as travel.c this file has been changed in three places
+	1. 25/25
+	2. 15/-15
+	3. difference_offset
+	4. Also I changed R to 2.83 it was originally 2.88
+	TIP#### Apply more weight to the robot and less error!!!!!
+	However too much weight and the robot moves really wierdly.
+	Please try to do this if possible.
+*/
+
+/* Things I have changed:
+		1. Offsets
+		2. waypoint2 (30,39) -> (18,39)
+		3. Forward speed 25/25 -> 28/28
+*/
+
+float R = 2.83/100.0; //radius of the wheel = 2.85 //2.88
+float L = 11.7/100.0; //dist between the wheels = 12.38 cm //12 //11
+
+
+typedef struct {
+	float x;
+	float y;
+	int visited;
+} point_t;
+
+/* vertices of the rectangle - has to be ordered counterclockwise or clockwise*/
+typedef struct {
+	point_t point_1;
+	point_t point_2;
+	point_t point_3;
+	point_t point_4;
+} rectangle_t;
+
+struct node {
+	point_t *point;
+	float priority;
+	float distance;
+	node *next;
+} node;
+
+typedef struct {
+	node *first;
+	//node *end;
+} PQ;
+
+int len_obstacles = 6; //length of the obstacles
+rectangle_t obstacles[6]; //array of rectangles
+int len_waypoints = 8;
+point_t waypoints[8]; //array of points
+
+point_t *start_pt;
+float start_angle;
+point_t *goal_pt;
+
+PQ pq_arr[1];
+node node_arr[100];
+
+
+/*
+float angle_offset(float initial_angle, float final_angle){
+	float angle_difference = final_angle - initial_angle;
+	float tune_offset;
+	return 0;
+}
+*/
+
+
+/* Tunes movement angle depending on actual angle */
+float angle_offset(float initial_angle, float final_angle){
+	float angle_difference = final_angle - initial_angle;
+	float tune_offset;
+
+	if(angle_difference < 0){
+		angle_difference = angle_difference + 2*PI;
+	}
+	if(angle_difference == 0){
+		tune_offset = 0;
+	}
+	else if(angle_difference < PI/24){
+		tune_offset = 0;
+	}
+	else if(angle_difference < PI/12){
+		tune_offset = 0;
+	}
+	// < 30 degree
+	else if(angle_difference < PI/6){
+		tune_offset = 4.5 * PI / 180; //0
+	}
+	// < 60 degree
+	else if(angle_difference < PI/3) {
+		tune_offset = 4.5 * PI / 180;
+	}
+	// < 90 degree
+	else if(angle_difference < PI/2) {
+		tune_offset = 4.5 * PI / 180;
+	}
+	// < 120 degree
+	else if(angle_difference < PI*2/3) {
+		tune_offset = 4.5 * PI / 180;
+	}
+	// < 150 degree
+	else if(angle_difference < PI*5/6) {
+		tune_offset = 4.5 * PI / 180;
+	}
+	// < 180 degree
+	else if(angle_difference < PI) {
+		tune_offset = 4.5 * PI / 180;
+	}
+	// < 210 degree
+	else if (angle_difference < PI*7/6) {
+		tune_offset = 8.5 * PI / 180;
+	}
+	// < 240 degree
+	else if (angle_difference < PI*4/3) {
+		tune_offset = 8.5 * PI / 180;
+	}
+	// < 270 degree
+	else if (angle_difference < PI*3/2) {
+		tune_offset = 8.5 * PI / 180;
+	}
+	// < 300 degree
+	else if (angle_difference < PI*5/3) {
+		tune_offset = 10 * PI / 180;
+	}
+	// < 330 degree
+	else if (angle_difference < PI*11/6) {
+		tune_offset = 10 * PI / 180;
+	}
+	// < 360 degree
+	else {
+		tune_offset = 10 * PI / 180;
+	}
+	return tune_offset;
+}
+
+
+/* Function to insert node into priority queue */
+void insert(PQ *q, node *toInsert)
+{
+	float p = toInsert->priority;
+
+	/* initialize PQ if needed */
+	if (q->first == NULL){
+		q->first = toInsert;
+	//	q->end = toInsert;
+		return;
+	}
+
+	node *curr = q->first;
+	node *prev = NULL;
+
+	int inserted = 0;
+	while(curr!=NULL){
+		if (curr->priority >= p){
+			//insert between prev and curr
+			if(prev == NULL){
+				q->first = toInsert;
+				toInsert->next = curr;
+			}else{
+				prev->next = toInsert;
+				toInsert->next = curr;
+			}
+			inserted = 1;
+			break;
+		}
+
+		prev = curr;
+		curr = curr->next;
+	}
+
+	if(inserted == 0){
+		prev->next = toInsert;
+	//	q->end = toInsert;
+		toInsert->next = NULL;
+	}
+
+}
+
+/* Function to delete the first element from queue */
+node *delMin(PQ *q)
+{
+	if (q->first == NULL){
+		//q is empty
+		return NULL;
+	}
+
+	node *minNode = q->first;
+
+	if (minNode->next == NULL){
+		//end node
+		q->first = NULL;
+		//q->end = NULL;
+	}else{
+		q->first = minNode->next;
+	}
+	return minNode;
+
+}
+
+void printPt(point_t *pt){
+	writeDebugStream("pt x: %f y %f\n", pt->x, pt->y);
+}
+
+/* determines if the line to travel (p1, p2) intersects with
+an edge of an obstacle (p3, p4) */
+int intersects(point_t *p1, point_t *p2, point_t *p3, point_t *p4){
+	/* ay + bx + c = 0
+	   dy + ex + f = 0
+	   solve this linear equation for x and y */
+
+	float a = (p2->x) - (p1->x);
+	float b = (p1->y) - (p2->y);
+	float c = ((p1->x)*(p2->y - p1->y) - (p1->y)*(p2->x - p1->x));
+	float d = (p4->x) - (p3->x);
+	float e = (p3->y) - (p4->y);
+	float f = ((p3->x)*(p4->y - p3->y) - (p3->y)*(p4->x - p3->x));
+
+	if ((e*a-b*d) == 0.0){
+		return 0; //lines are parallel
+	}
+
+	float x = (c*d-f*a)/(e*a-b*d);
+	float y = (b*f-e*c)/(e*a-b*d);
+
+	/* if (x,y) is within the bounds of these points,
+	they are intersecting the obstacle line, p3 p4
+	and the travel line, p1 p2*/
+	if ((x <= p4->x && x >= p3->x) || (x <= p3->x && x >= p4->x)){
+		if ((y <= p4->y && y >= p3->y) || (y <= p3->y && y >= p4->y)){
+			if ((x <= p2->x && x >= p1->x) || (x <= p1->x && x >= p2->x)){
+				if ((y <= p2->y && y >= p1->y) || (y <= p1->y && y >= p2->y)){
+					return 1;
+				}
+			}
+		}
+	}
+	return 0;
+
+}
+
+/* checks if the line composed of p1 and p2 intersects any of the obstacles */
+int intersectsObstacles(point_t *p1, point_t *p2){
+
+	int i;
+	for(i=0; i<len_obstacles; i++){
+		rectangle_t *rect = obstacles[i];
+
+		point_t *pt1 = &(rect->point_1);
+		point_t *pt2 = &(rect->point_2);
+		point_t *pt3 = &(rect->point_3);
+		point_t *pt4 = &(rect->point_4);
+
+		int	r1 = intersects(p1, p2, pt1, pt2);
+		int	r2 = intersects(p1, p2, pt2, pt3);
+		int	r3 = intersects(p1, p2, pt3, pt4);
+		int	r4 = intersects(p1, p2, pt4, pt1);
+
+		if (r1 + r2 + r3 + r4 > 0){
+
+			/* for debugging*/
+		/*	writeDebugStreamLine("------------points that intersect some obstacle \n");
+			printPt(p1);
+			printPt(p2);
+
+			if (r1 > 0){
+				writeDebugStream("			intersects at : \n");
+				printPt(pt1);
+				printPt(pt2);
+			}
+			if (r2 > 0){
+				writeDebugStream("			intersects at : \n");
+				printPt(pt2);
+				printPt(pt3);
+			}
+			if (r3 > 0){
+				writeDebugStream("			intersects at : \n");
+				printPt(pt3);
+				printPt(pt4);
+			}
+			if (r4 > 0){
+				writeDebugStream("			intersects at : \n");
+				printPt(pt4);
+				printPt(pt1);
+			}*/
+			return 1;
+		}
+
+	}
+	return 0;
+
+}
+
+/* prints pq info*/
+void printPQ (PQ *q){
+	node *curr = q->first;
+
+	writeDebugStream("**********printing pq info*********\n pq: ");
+
+	while(curr != NULL){
+		writeDebugStream("%f ", curr->priority);
+		curr = curr->next;
+	}
+	writeDebugStream("\n");
+}
+
+/* checks pq invariant */
+void checkPQ (PQ *q){
+
+	node *curr = q->first;
+	if (curr == NULL || curr->next == NULL){
+		return;
+	}
+
+	float prev_pr = curr->priority;
+	curr = curr->next;
+	while(curr != NULL){
+		if (curr->priority < prev_pr){
+			printPQ(q);
+		}
+		prev_pr = curr->priority;
+		curr = curr->next;
+	}
+
+}
+
+/* euclidean distance cost function */
+float cost(point_t *p1, point_t *p2){
+	float x1 = p1->x;
+	float y1 = p1->y;
+	float x2 = p2->x;
+	float y2 = p2->y;
+
+	return sqrt((x1-x2)*(x1-x2) + (y1-y2)*(y1-y2));
+}
+
+/* euclidean distance heuristics */
+float heuristics(point_t *pt){
+	return cost(pt, goal_pt);
+}
+
+/* tests if the point is connected with the graph*/
+int isConnected(point_t *pt){
+	int i;
+	for (i=0; i<len_waypoints; i++){
+		//if same point, skip
+		if (waypoints[i].x == pt->x &&
+			waypoints[i].y == pt->y){
+			continue;
+		}
+
+		//can have an edge
+		if (!intersectsObstacles(pt, waypoints[i])){
+			return 1;
+		}
+	}
+	return 0;
+}
+
+/* tests if points are equal*/
+int ptEquals(point_t *pt1, point_t *pt2){
+	return pt1->x == pt2->x && pt1->y == pt2->y;
+}
+
+/* Jaeho's part of the code - Deals with commanding the robot to move to specific location */
+
+/* Calculates Angle for given two points */
+float calculateAngle(point_t *st, point_t *en)
+{
+	float angle = 0;
+	float x1 = st->x;
+	float y1 = st->y;
+	float x2 = en->x;
+	float y2 = en->y;
+
+	if(x1 == x2 && y2 > y1){
+		angle = PI / 2;
+	} else if(x1 == x2 && y2 < y1) {
+		angle = PI * 3 /2;
+	}
+	else{
+		angle = atan((y2-y1)/(x2-x1));
+	}
+
+	if (x2 < x1){
+		angle = angle + PI;
+	}
+	if (x2 > x1 && y2 < y1) {
+		angle = angle + 2*PI;
+	}
+	writeDebugStream("angle for two points (%f, %f) (%f,%f) is %f\n", x1,y1,x2,y2,angle * 180 / PI);
+
+	return angle;
+
+}
+
+/* Calculates distance given two points */
+float calculateDistance(point_t *st, point_t *en)
+{
+	float x1 = st->x * 0.0254; //convert the distance into meters
+	float y1 = st->y * 0.0254;
+	float x2 = en->x * 0.0254;
+	float y2 = en->y * 0.0254;
+
+	float distance = sqrt((x1-x2)*(x1-x2) + (y1-y2)*(y1-y2));
+	writeDebugStream("distance for two points (%f, %f) (%f,%f) is %f\n", x1,y1,x2,y2,distance);
+
+	return distance;
+}
+
+/* Turns the robot toward the destination point */
+float travelAngle(point_t *st, point_t *en, float current_angle)
+{
+
+
+	float angle = calculateAngle(st, en);
+	float angle_move_offset = angle_offset(current_angle, angle);
+	float final_angle = angle - angle_move_offset;
+	if(final_angle < 0){
+		final_angle = final_angle + 2*PI;
+	}
+
+
+	float offset = 0.03; //
+
+	float readingL_last = nMotorEncoder[LMOTOR];
+	float readingR_last = nMotorEncoder[RMOTOR];
+	float time = 0;
+	time1[T1] = 0;
+
+
+	motor[LMOTOR] = -15;
+	motor[RMOTOR] = 15;
+	while(!(current_angle >= (final_angle - offset) && current_angle <= (final_angle + offset))){
+		float readingL_curr = nMotorEncoder[LMOTOR];
+		float readingR_curr = nMotorEncoder[RMOTOR];
+		float time_now = time1[T1]/1000.0;
+		float timeElapsed = time_now - time; //TODO: make sure this is right
+		time = time + timeElapsed;
+
+		if (time == 0){
+			continue;
+		}
+
+		float vl_curr = (readingL_curr-readingL_last)/timeElapsed*3.1416/180.0;
+		float vr_curr = (readingR_curr-readingR_last)/timeElapsed*3.1416/180.0; //radians per second
+		float Vl = vl_curr*R;
+		float Vr = vr_curr*R;
+		float w = (Vr - Vl)/L; //angular velocity radians/s
+		//positions
+
+		current_angle = current_angle + w*timeElapsed;
+
+		readingL_last = readingL_curr;
+		readingR_last = readingR_curr;
+
+		if (current_angle >= 2*PI) {
+			current_angle = current_angle - 2*PI;
+		}
+
+
+
+		wait1Msec(5);
+		//break;
+	}
+	writeDebugStreamLine("current angle in degrees in travel: %f\n", current_angle * 180 / PI);
+	wait1Msec(10);
+	return angle;
+
+}
+
+/* Travels to the destination */
+void travelDistance(point_t *st, point_t *en)
+{
+	motor[LMOTOR] = 28; //40
+	motor[RMOTOR] = 28; //40
+	float distanceTraveled = 0;
+	float distance = calculateDistance(st, en);
+
+	writeDebugStream("(x, y) = (%f, %f)", en->x, en->y);
+
+	float readingL_last = nMotorEncoder[LMOTOR];
+	float readingR_last = nMotorEncoder[RMOTOR];
+	float time = 0;
+	time1[T1] = 0;
+
+	while(distanceTraveled <= distance){
+
+		float readingL_curr = nMotorEncoder[LMOTOR];
+		float readingR_curr = nMotorEncoder[RMOTOR];
+		float time_now = time1[T1]/1000.0;
+		float timeElapsed = time_now - time; //TODO: make sure this is right
+		time = time + timeElapsed;
+
+		if (time == 0){
+			continue;
+		}
+
+		float vl_curr = (readingL_curr-readingL_last)/timeElapsed*3.1416/180.0;
+		float vr_curr = (readingR_curr-readingR_last)/timeElapsed*3.1416/180.0; //radians per second
+		float Vl = vl_curr*R;
+		float Vr = vr_curr*R;
+		float v = (Vl + Vr)/2; //linear velocity m/s
+		//positions
+
+		readingL_last = readingL_curr;
+		readingR_last = readingR_curr;
+		distanceTraveled = distanceTraveled + timeElapsed*v;
+		//writeDebugStream("distance traveled: %f", distanceTraveled);
+		wait1Msec(10);
+
+
+	}
+	writeDebugStream("distance traveled in travel: %f\n\n", distanceTraveled);
+	wait1Msec(100); //give it time to end the function before moving on and recieving the next set of functions
+}
+
+void rest(){
+	motor[RMOTOR] = 0;
+	motor[LMOTOR] = 0;
+	wait1Msec(100);
+}
+
+
+/* Commands the robot to move */
+float command(point_t *current_pos, float curr_angle, point_t *goal_pos){
+
+	writeDebugStream("commanding from ");
+	printPt(current_pos);
+	printPt(goal_pos);
+	writeDebugStream("\n");
+
+	float final_angle = travelAngle(current_pos, goal_pos, curr_angle);
+	rest();
+	travelDistance(current_pos, goal_pos);
+	rest();
+
+	return final_angle;
+
+}
+
+
+
+/* plans trajectory */
+void planTrajectory(){
+	/*p1 and p2 have edge between if no obstacle is in their way */
+
+	/* initialize PQ */
+	PQ *pq = pq_arr[0];
+	pq->first = NULL;
+	//pq->end = NULL;
+
+	/*put in start value*/
+
+	node *n = node_arr[0]; //start point
+	n->priority = 0 + heuristics(start_pt);
+	n->point = start_pt;
+	n->distance = 0;
+	n->next = NULL;
+	int node_idx = 1;
+
+	/*inserts start point */
+	insert(pq, n);
+
+	node *curr;
+	node *prev = NULL;
+	float prev_angle;
+	while ((curr = delMin(pq)) != NULL){
+
+		if (curr->point->visited == 1){
+			//skip if we've visited the point
+			continue;
+		}
+
+		writeDebugStream(">>>>>>>curr is x: %f y: %f\n", curr->point->x, curr->point->y);
+		//TODO: command ()to go to curr node (except start) or store in an array
+		//start -- no need to command v
+		if (ptEquals(curr->point, start_pt)){
+			prev_angle = start_angle;
+			prev = curr;
+		}else{
+			float curr_angle = command(prev->point, prev_angle, curr->point);
+			prev_angle = curr_angle;
+			prev = curr;
+		}
+
+
+
+		//popped goal point?
+		if (curr->point->x == goal_pt->x && curr->point->y == goal_pt->y){
+			//end of search
+			break;
+		}
+
+		if (curr->point->visited == 0){
+			curr->point->visited = 1;
+			int i;
+			for (i=0; i<len_waypoints; i++){
+
+				//if same point, skip
+				if (waypoints[i].x == curr->point->x &&
+					waypoints[i].y == curr->point->y){
+						continue;
+					}
+
+				//can have an edge
+				if (!intersectsObstacles(curr->point, waypoints[i])){
+
+					//writeDebugStream("******these points have edges*****\n");
+					//printPt(curr->point);
+					//printPt(waypoints[i]);
+
+					float curr_dist = curr->distance;
+					float dist = curr_dist + ((float)cost(curr->point, waypoints[i]));
+					float pr = dist + heuristics(waypoints[i]);
+
+					node *nodee = node_arr[node_idx];
+					nodee->priority = pr;
+					nodee->point = &waypoints[i]; //check if this is right!!!
+					//writeDebugStream("**just checking **printing node pt\n ");
+					//printPt(nodee->point);
+					nodee->distance = dist;
+					nodee->next = NULL;
+					node_idx = node_idx + 1;
+
+					insert(pq, nodee);
+				}
+
+			}
+
+				checkPQ(pq);
+		}
+	}
+}
+
+
+task main()
+{
+
+/* initializing fields*/
+point_t *w1 = waypoints[0];
+w1->x = 21;
+w1->y = 6;
+w1->visited = 0;
+point_t *w2 = waypoints[1];
+w2->x = 18;
+w2->y = 39;
+w2->visited = 0;
+point_t *w3 = waypoints[2];
+w3->x = 54;
+w3->y = 42;
+w3->visited = 0;
+point_t *w4 = waypoints[3];
+w4->x = 63;
+w4->y = 27;
+w4->visited = 0;
+point_t *w5 = waypoints[4];
+w5->x = 78;
+w5->y = 12;
+w5->visited = 0;
+point_t *w6 = waypoints[5];
+w6->x = 42;
+w6->y = 6;
+w6->visited = 0;
+
+/* obstacles */
+
+rectangle_t *rect1 = obstacles[0];
+(rect1->point_1).x = 0.0;
+(rect1->point_1).y = 21.0;
+(rect1->point_2).x = 0.0;
+(rect1->point_2).y = 34.0;
+(rect1->point_3).x = 28.0;
+(rect1->point_3).y = 22.0;
+(rect1->point_4).x = 24.0;
+(rect1->point_4).y = 11.0;
+
+rectangle_t *rect2 = obstacles[1];
+(rect2->point_1).x = 30.0;
+(rect2->point_1).y = 22.0;
+(rect2->point_2).x = 22.0;
+(rect2->point_2).y = 30.0;
+(rect2->point_3).x = 30.0;
+(rect2->point_3).y = 38.0;
+(rect2->point_4).x = 38.0;
+(rect2->point_4).y = 30.0;
+
+rectangle_t *rect3 = obstacles[2];
+(rect3->point_1).x = 28.0;
+(rect3->point_1).y = 18.0;
+(rect3->point_2).x = 52.0;
+(rect3->point_2).y = 36.0;
+(rect3->point_3).x = 59.0;
+(rect3->point_3).y = 27.0;
+(rect3->point_4).x = 36.0;
+(rect3->point_4).y = 9.0;
+
+rectangle_t *rect4 = obstacles[3];
+(rect4->point_1).x = 52.0;
+(rect4->point_1).y = 12.0;
+(rect4->point_2).x = 60.0;
+(rect4->point_2).y = 20.0;
+(rect4->point_3).x = 68.0;
+(rect4->point_3).y = 12.0;
+(rect4->point_4).x = 60.0;
+(rect4->point_4).y = 4.0;
+
+rectangle_t *rect5 = obstacles[4];
+(rect5->point_1).x = 59.0;
+(rect5->point_1).y = 39.0;
+(rect5->point_2).x = 66.0;
+(rect5->point_2).y = 47.0;
+(rect5->point_3).x = 73.0;
+(rect5->point_3).y = 39.0;
+(rect5->point_4).x = 66.0;
+(rect5->point_4).y = 31.0;
+
+rectangle_t *rect6 = obstacles[5];
+(rect6->point_1).x = 69.0;
+(rect6->point_1).y = 26.0;
+(rect6->point_2).x = 81.0;
+(rect6->point_2).y = 48.0;
+(rect6->point_3).x = 96.0;
+(rect6->point_3).y = 48.0;
+(rect6->point_4).x = 80.0;
+(rect6->point_4).y = 20.0;
+
+/* end */
+
+/* start and goal points */
+point_t *w7 = waypoints[6];
+w7->x = 12;
+w7->y = 12;
+start_angle = PI*7/4;
+w7->visited = 0;
+start_pt = w7;
+
+point_t *w8 = waypoints[7];
+w8->x = 12; //78
+w8->y = 36; //6
+w8->visited = 0;
+goal_pt = w8;
+
+/* end */
+
+if (isConnected(start_pt) && isConnected(goal_pt)){
+	writeDebugStream("path can be found! the trajectory is ... \n");
+	planTrajectory();
+}else{
+	writeDebugStream("path cannot be found! \n");
+}
+
+
+
+
+
+
+//-------------tests----------------
+/*
+rectangle_t *rectt = obstacles[5];
+writeDebugStreamLine("%f %f\n", (rectt->point_1).x, (rectt->point_1).y); //69 25
+point_t *ww = waypoints[5];
+writeDebugStreamLine("%f %f\n", ww->x, ww->y);
+*/
+
+//test intersect
+/*
+int ans1 = intersectsObstacles(w1, w2);//1
+int ans2 = intersectsObstacles(w2, w4);//1
+int ans3 = intersectsObstacles(w6, w5);//1
+int ans4 = intersectsObstacles(w3, w2);//0
+int ans5 = intersectsObstacles(w2, w3);//0
+
+int ans1 = intersectsObstacles(w4, w2);//0
+int ans2 = intersectsObstacles(w2, w1);//0
+int ans3 = intersectsObstacles(w5, w6);//0
+int ans4 = intersectsObstacles(w6, w3);//0
+int ans5 = intersectsObstacles(w2, w6);//1
+
+writeDebugStream("%d %d %d %d %d\n ", ans1, ans2, ans3, ans4, ans5);
+*/
+
+}
