@@ -13,7 +13,7 @@ queue_t queue_new(void);
 
 void enq(queue_t Q, elem e);
 
-void deq(queue_t Q);
+elem deq(queue_t Q);
 
 void print_queue(queue_t Q);
 

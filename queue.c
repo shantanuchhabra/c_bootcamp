@@ -62,15 +62,15 @@ void enq (queue_t Q, elem data) {
     Q->size += 1;
 }
 
-queue_node* deq(queue_t Q) {
+elem deq(queue_t Q) {
     if (is_queue_empty(Q)) {
-        return;
+        return NULL;
     }
     queue_node* node = Q->front;
     Q->front->next->prev = NULL;
     Q->front = Q->front->next;
     Q->size -= 1;
-    return node;
+    return node->data;
     // free(node->data);
     // free(node);
 }
