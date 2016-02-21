@@ -15,7 +15,9 @@ queue_t queue_new(void);
 void enq(queue_t Q, elem e);
 
 queue_node* deq(queue_t Q);
-void free_queue_node(queue_node* node);
+
+void print_queue(queue_t Q);
+
 void free_queue(queue_t Q);
 
 #endif
