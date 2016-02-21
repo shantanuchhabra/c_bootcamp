@@ -37,6 +37,11 @@ queue_t queue_new(void) {
     return Q;
 }
 
+// EXAMPLE FUNCTION HEADER COMMENT
+/* enq - enqueue an elem data onto the back of queue Q
+ * params: Q = pointer to queue instance
+ *         data = data of type elem to enqueue
+ */
 void enq (queue_t Q, elem data) {
     queue_node* new_node = malloc(sizeof(queue_node));
     new_node->data = data;
