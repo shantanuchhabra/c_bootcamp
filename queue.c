@@ -68,7 +68,7 @@ queue_node* deq(queue_t Q) {
     return node;
 }
 
-void free_queue_node(queue_node* node) {
+static void free_queue_node(queue_node* node) {
     if (node == NULL) return;
     free(node->data);
     free_queue_node(node->next);
@@ -80,7 +80,7 @@ void free_queue(queue_t Q) {
     free(Q);
 }
 
-void print_node_data(elem data) {
+static inline void print_node_data(elem data) {
     printf("%d ", *data);
 }
 
