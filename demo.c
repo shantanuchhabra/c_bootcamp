@@ -16,16 +16,18 @@ int main(void) {
     enq(Q, data3);
     enq(Q, data4);
     print_queue(Q);
-    deq(Q);
+    queue_node* first = deq(Q);
     print_queue(Q);
-    deq(Q);
+    queue_node* second = deq(Q);
     print_queue(Q);
-    deq(Q);
+    queue_node* third = deq(Q);
     print_queue(Q);
-    deq(Q);
-    print_queue(Q);
-    deq(Q);
+    queue_node* fourth = deq(Q);
     print_queue(Q);
     free_queue(Q);
+    free_queue_node(first);
+    free_queue_node(second);
+    free_queue_node(third);
+    free_queue_node(fourth);
     return 0;
 }

@@ -57,7 +57,7 @@ void enq (queue_t Q, elem data) {
     Q->size += 1;
 }
 
-void deq(queue_t Q) {
+queue_node* deq(queue_t Q) {
     if (is_queue_empty(Q)) {
         return;
     }
@@ -65,8 +65,9 @@ void deq(queue_t Q) {
     Q->front->next->prev = NULL;
     Q->front = Q->front->next;
     Q->size -= 1;
-    free(node->data);
-    free(node);
+    return node;
+    // free(node->data);
+    // free(node);
 }
 
 static void free_queue_node(queue_node* node) {
@@ -93,3 +94,13 @@ void print_queue(queue_t Q) {
     }
     putchar('\n');
 }
+
+
+/* 
+ * inline avoids overhead of function calling
+ * it copies the machine code of the function and 
+ * place it wherever it's called.
+ * inline is slightly better than macro because
+ * the subst happens after compilation and not before
+ */
+
