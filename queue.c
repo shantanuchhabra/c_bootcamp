@@ -108,6 +108,7 @@ int main() {
     enq(Q, data4);
     print_queue(Q);
     printf("\n");
+    // free_queue(Q); // Make this function call when you want to demo free
     deq(Q);
     print_queue(Q);
     printf("\n");
