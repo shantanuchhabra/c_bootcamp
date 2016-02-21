@@ -4,7 +4,6 @@
 #include <stdbool.h>
 
 typedef int* elem;
-typedef struct queue_node queue_node;
 typedef struct queue queue;
 typedef struct queue* queue_t;
 
@@ -14,7 +13,7 @@ queue_t queue_new(void);
 
 void enq(queue_t Q, elem e);
 
-queue_node* deq(queue_t Q);
+void deq(queue_t Q);
 
 void print_queue(queue_t Q);
 

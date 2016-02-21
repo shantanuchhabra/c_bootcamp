@@ -2,11 +2,11 @@
 #include <stdio.h>
 #include "queue.h"
 
-struct queue_node {
+typedef struct queue_node {
     elem data;
     struct queue_node* next;
     struct queue_node* prev;
-};
+} queue_node;
 
 struct queue {
     queue_node* front; // Points to root queue_node
@@ -57,15 +57,16 @@ void enq (queue_t Q, elem data) {
     Q->size += 1;
 }
 
-queue_node* deq(queue_t Q) {
+void deq(queue_t Q) {
     if (is_queue_empty(Q)) {
-        return NULL;
+        return;
     }
     queue_node* node = Q->front;
     Q->front->next->prev = NULL;
     Q->front = Q->front->next;
     Q->size -= 1;
-    return node;
+    free(node->data);
+    free(node);
 }
 
 static void free_queue_node(queue_node* node) {
