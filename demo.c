@@ -16,7 +16,6 @@ int main(void) {
     enq(Q, data3);
     enq(Q, data4);
     print_queue(Q);
-    // free_queue(Q); // Make this function call when you want to demo free
     deq(Q);
     print_queue(Q);
     deq(Q);
@@ -27,5 +26,6 @@ int main(void) {
     print_queue(Q);
     deq(Q);
     print_queue(Q);
+    free_queue(Q);
     return 0;
 }
