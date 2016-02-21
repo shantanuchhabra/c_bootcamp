@@ -16,7 +16,7 @@ struct queue {
 
 bool is_queue_empty (queue_t Q) {
     if (Q == NULL) {
-        fprintf(stderr, "NULL Queue.");
+        fprintf(stderr, "NULL Queue.\n");
         exit(1);
     }
     if (Q->size == 0) {
@@ -90,6 +90,7 @@ void print_queue(queue_t Q) {
         print_node_data(p->data);
         p = p->next;
     }
+    putchar('\n');
 }
 
 int main(void) {
@@ -107,20 +108,15 @@ int main(void) {
     enq(Q, data3);
     enq(Q, data4);
     print_queue(Q);
-    printf("\n");
     // free_queue(Q); // Make this function call when you want to demo free
     deq(Q);
     print_queue(Q);
-    printf("\n");
     deq(Q);
     print_queue(Q);
-    printf("\n");
     deq(Q);
     print_queue(Q);
-    printf("\n");
     deq(Q);
     print_queue(Q);
-    printf("\n");
     deq(Q);
     print_queue(Q);
     return 0;
