@@ -10,7 +10,7 @@ typedef struct queue* queue_t;
 
 bool is_queue_empty(queue_t Q);
 
-queue_t queue_new();
+queue_t queue_new(void);
 
 void enq(queue_t Q, elem e);
 

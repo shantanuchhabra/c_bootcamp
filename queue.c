@@ -25,7 +25,7 @@ bool is_queue_empty (queue_t Q) {
     return (Q->size == 0);
 }
 
-queue_t queue_new() {
+queue_t queue_new(void) {
     queue_t Q = malloc(sizeof(queue));
     queue_node* dummy = malloc(sizeof(queue_node));
     dummy->data = NULL;
@@ -92,7 +92,7 @@ void print_queue(queue_t Q) {
     }
 }
 
-int main() {
+int main(void) {
     queue_t Q = queue_new();
     int* data1 = malloc(sizeof(int)); 
     *data1 = 1;
