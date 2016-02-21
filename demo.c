@@ -25,9 +25,9 @@ int main(void) {
     int* fourth = deq(Q);
     print_queue(Q);
     free_queue(Q);
-    free_queue_node(first);
-    free_queue_node(second);
-    free_queue_node(third);
-    free_queue_node(fourth);
+    free(first);
+    free(second);
+    free(third);
+    free(fourth);
     return 0;
 }
